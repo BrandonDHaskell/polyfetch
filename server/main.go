@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/binary"
 	"flag"
 	"fmt"
@@ -8,7 +9,10 @@ import (
 	"log"
 	"math/rand/v2"
 	"net/http"
+	"os"
+	"os/signal"
 	"strconv"
+	"syscall"
 	"time"
 )
 
@@ -17,14 +21,19 @@ const (
 	chunkSize   = 32 * 1024
 )
 
-// seedFromID derives two independent uint64 seeds from a target ID string.
-// Using FNV-64a and its bitwise complement gives two uncorrelated seeds for
-// the PCG source, ensuring different IDs produce different byte streams.
+// seedFromID derives two independent uint64 seeds from a target ID string using
+// two separate FNV-64a hashes with different domain separators, giving PCG the
+// independent seeds it needs to avoid degenerate state-space regions.
 func seedFromID(id string) (uint64, uint64) {
-	h := fnv.New64a()
-	h.Write([]byte(id))
-	s := h.Sum64()
-	return s, ^s
+	h1 := fnv.New64a()
+	h1.Write([]byte(id))
+	s1 := h1.Sum64()
+
+	h2 := fnv.New64a()
+	h2.Write([]byte("polyfetch:")) // domain separator
+	h2.Write([]byte(id))
+	s2 := h2.Sum64()
+	return s1, s2
 }
 
 // fillBuf fills buf with deterministic pseudo-random bytes from rng.
@@ -43,7 +52,6 @@ func fillBuf(rng *rand.Rand, buf []byte) {
 
 func handlePayload(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-
 	q := r.URL.Query()
 
 	size := defaultSize
@@ -80,13 +88,15 @@ func handlePayload(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(time.Duration(delay) * time.Millisecond)
 	}
 
+	// No Content-Length: use chunked transfer encoding so a client disconnect
+	// mid-stream never leaves the connection in a broken state.
 	w.Header().Set("Content-Type", "application/octet-stream")
-	if status >= 200 && status < 300 {
-		w.Header().Set("Content-Length", strconv.Itoa(size))
-	}
 	w.WriteHeader(status)
 
 	if status < 200 || status >= 300 {
+		// Simulated upstream error: empty body by design. Validation errors above
+		// get human-readable text bodies; ?status= errors get nothing, matching
+		// real upstream behavior clients must handle correctly.
 		return
 	}
 
@@ -107,8 +117,17 @@ func handlePayload(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func logMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		next.ServeHTTP(w, r)
+		log.Printf("%s %s %s", r.Method, r.URL.RequestURI(), time.Since(start))
+	})
+}
+
 func main() {
 	addr := flag.String("addr", ":8080", "listen address")
+	quiet := flag.Bool("quiet", false, "suppress per-request logs")
 	flag.Parse()
 
 	mux := http.NewServeMux()
@@ -117,6 +136,36 @@ func main() {
 		fmt.Fprintln(w, "ok")
 	})
 
-	log.Printf("polyfetch server listening on %s", *addr)
-	log.Fatal(http.ListenAndServe(*addr, mux))
+	var handler http.Handler = mux
+	if !*quiet {
+		handler = logMiddleware(mux)
+	}
+
+	srv := &http.Server{
+		Addr:    *addr,
+		Handler: handler,
+		// Bounds how long a client can take to send request headers; safe to
+		// keep short because headers always arrive in milliseconds.
+		// ReadTimeout and WriteTimeout are deliberately unset: ?delay= and large
+		// ?size= requests are legitimate slow responses that would trip them.
+		ReadHeaderTimeout: 5 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
+
+	go func() {
+		log.Printf("polyfetch server listening on %s", *addr)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatal(err)
+		}
+	}()
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	<-sigCh
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Printf("shutdown error: %v", err)
+	}
 }
