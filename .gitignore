@@ -1,5 +1,6 @@
-# Server binary
+# Server binaries
 server/server
+server/polyfetch-server
 
 # Go client binary
 clients/go/polyfetch
@@ -16,6 +17,12 @@ clients/python/.venv/
 # TypeScript / Node artifacts
 clients/typescript/node_modules/
 clients/typescript/dist/
+
+# Measurement data (generated, not source)
+results/
+
+# Claude Code local settings (machine-specific, not shared)
+.claude/settings.local.json
 
 # Secrets
 .env
