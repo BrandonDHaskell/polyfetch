@@ -128,7 +128,22 @@ func logMiddleware(next http.Handler) http.Handler {
 func main() {
 	addr := flag.String("addr", ":8080", "listen address")
 	quiet := flag.Bool("quiet", false, "suppress per-request logs")
+	healthcheck := flag.Bool("healthcheck", false, "check server health and exit")
 	flag.Parse()
+
+	if *healthcheck {
+		resp, err := http.Get("http://localhost" + *addr + "/health")
+		if err != nil {
+			log.Printf("healthcheck failed: %v", err)
+			os.Exit(1)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			log.Printf("healthcheck: unexpected status %d", resp.StatusCode)
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /payload/{id}", handlePayload)

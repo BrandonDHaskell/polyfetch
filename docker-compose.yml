@@ -1,6 +1,13 @@
 services:
   server:
     build: ./server
+    container_name: polyfetch-server
     ports:
-      - "8080:8080"
-    cpuset: "0-3"
+      - "127.0.0.1:8080:8080"     # bind to loopback only
+    cpuset: "0-3"                 # pin server to 4 cores
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "/polyfetch-server", "-healthcheck"]
+      interval: 10s
+      timeout: 2s
+      retries: 3
