@@ -6,9 +6,7 @@ A cross-language experiment: build the **same concurrent fetch-and-aggregate too
 product. Each client is a focused, real little tool that must produce **byte-identical
 output** against a shared local server.
 
-> **Decisions to confirm** are flagged inline like this throughout the document. They are
-> sensible defaults; override any of them before implementation begins. Once ratified,
-> this README is the frozen contract every client must satisfy.
+This README is the frozen contract every client must satisfy.
 
 ---
 
@@ -43,7 +41,7 @@ concurrency.
 | Output sort order | Error-propagation idiom (within the rules below) |
 | Exit codes | Internal data structures |
 
-**Do not** pin or unify the concurrency implementation across languages -- that divergence
+**Do not** pin or unify the concurrency implementation across languages — that divergence
 is the experiment. **Do** pin everything that affects whether two clients produce identical
 bytes.
 
@@ -65,7 +63,7 @@ These keep the comparison valid. They are also encoded in
 5. **Standard library only** where feasible. The *only* permitted dependency exceptions:
    - **C++** may use **libcurl** (no stdlib HTTP).
    - **Python** may use **aiohttp** (stdlib async HTTP is painful).
-   Any other dependency is a spec violation. A stdlib gap is itself a finding -- record it,
+   Any other dependency is a spec violation. A stdlib gap is itself a finding — record it,
    don't silently work around it.
 
 ---
@@ -76,9 +74,9 @@ For each target in `shared/targets.txt`:
 
 1. **Fetch** the target's bytes over HTTP (I/O-bound; perform concurrently).
 2. **Process** the bytes (CPU-bound; parallelize):
-   - `sha256` -- lowercase hex SHA-256 of the raw bytes.
-   - `size_bytes` -- number of bytes received.
-   - `line_count` -- count of `0x0A` (`\n`) bytes. Nothing else counts as a line.
+   - `sha256` — lowercase hex SHA-256 of the raw bytes.
+   - `size_bytes` — number of bytes received.
+   - `line_count` — count of `0x0A` (`\n`) bytes. Nothing else counts as a line.
 3. Produce one **record** (schema in §7).
 
 Then **aggregate** all records and emit a **report** (§7), sorted per §8.
@@ -87,10 +85,8 @@ A target that fails (network error, non-2xx status, timeout) is recorded with
 `status: "error"` and **must not crash the run**. Processing of the remaining targets
 continues.
 
-> **Decision to confirm:** `line_count` is the raw count of `\n` bytes. A file ending
-> without a trailing newline therefore has `line_count` = (visible lines - 1). This is
-> intentional and unambiguous; flag if you'd prefer "number of lines including a final
-> unterminated line."
+`line_count` is the raw count of `\n` bytes. A file ending without a trailing newline
+therefore has `line_count` = (visible lines − 1). This is intentional and unambiguous.
 
 ---
 
@@ -99,56 +95,47 @@ continues.
 Every client exposes the **same** CLI:
 
 ```
-polyfetch [--concurrency K] [--targets PATH] [--base-url URL] [--timeout MS]
+polyfetch [--concurrency K] [--targets PATH] [--timeout MS]
 ```
 
 | Flag | Type | Default | Meaning |
 |---|---|---|---|
-| `--concurrency` | int >= 1 | `8` | Max targets in flight simultaneously (bounded pool). |
-| `--targets` | path | `shared/targets.txt` | Input file, one target per line. |
-| `--base-url` | string | `http://localhost:8080` | Server base; see §6 on how targets resolve. |
-| `--timeout` | int (ms) | `30000` | Per-target timeout. Exceeding it -> `status: "error"`. |
+| `--concurrency` | int ≥ 1 | `8` | Max targets in flight simultaneously (bounded pool). |
+| `--targets` | path | `shared/targets.txt` | Input file, one full URL per line. |
+| `--timeout` | int (ms) | `30000` | Per-target timeout. Exceeding it → `status: "error"`. |
 
-- `--concurrency` is the knob you sweep (1 -> past your client core count) to produce the
+- `--concurrency` is the knob you sweep (1 → past your client core count) to produce the
   result curve. It must cap *simultaneous in-flight targets* via a **bounded** worker pool,
   not an unbounded spawn-everything approach. **How** the bound is enforced is free and
   language-idiomatic (buffered channel/semaphore, thread pool size, `asyncio.Semaphore`,
   a promise-pool, etc.).
-- Invalid flag values (e.g. `--concurrency 0`) -> exit code `2`, message to stderr.
-
-> **Decision to confirm:** default `--concurrency` of `8`. Pick any default; it only sets
-> the starting point for sweeps.
+- Invalid flag values (e.g. `--concurrency 0`) → exit code `2`, message to stderr.
+- An unparseable URL in `targets.txt` is an invocation error → exit code `2`, message to
+  stderr, no records emitted. (Distinguishes malformed input from runtime fetch failures.)
 
 ---
 
-## 6. Targets file and server resolution
+## 6. Targets file
 
-`shared/targets.txt` contains **one target ID per line**. Blank lines and lines beginning
-with `#` are ignored. A client resolves each ID against `--base-url`:
-
-```
-<base-url>/payload/<id>
-```
+`shared/targets.txt` contains **one full URL per line**. Blank lines and lines beginning
+with `#` are ignored. The client passes each URL through to the HTTP layer unchanged.
 
 Example `shared/targets.txt`:
 
 ```
 # medium-payload workload
-0001
-0002
-0003
+http://localhost:8080/payload/0001?size=1048576
+http://localhost:8080/payload/0002?size=1048576&delay=50
+http://localhost:8080/payload/0003?size=524288
+http://localhost:8080/payload/0004?status=500
 ```
 
--> client fetches `http://localhost:8080/payload/0001`, etc.
+Full URLs in the file give you per-target heterogeneity in one place: mix sizes, inject
+slow targets among fast ones, force specific failures by URL. The workload is **fully
+described by `targets.txt`** — to reproduce a run, share that one file. To repoint at a
+different host or port, regenerate `targets.txt` via `gen_targets.sh`.
 
-Using **IDs + base-url** (rather than full URLs in the file) keeps the file portable and
-lets you repoint all clients at a different host by changing one flag.
-
-> **Decision to confirm:** IDs in the file, expanded to `<base-url>/payload/<id>`.
-> Alternative is full URLs per line (more flexible, less tidy). Recommendation: IDs.
-
-The **server** controls payload characteristics via query params the *generator script*
-bakes into the IDs or that the client appends per a workload profile:
+The **server** controls payload characteristics via the query params on each URL:
 
 | Param | Meaning | Determinism |
 |---|---|---|
@@ -156,14 +143,10 @@ bakes into the IDs or that the client appends per a workload profile:
 | `delay` | ms the server waits before responding | simulates slow I/O |
 | `status` | force an HTTP status (e.g. `?status=500`) | exercises error handling |
 
-Payloads are **generated deterministically from the target ID** (seeded PRNG), so every
-client and every run receives byte-identical data for the same ID without any file or
-database on the server. The matching `sha256` is therefore stable and acts as the
+Payloads are **generated deterministically from the target path + params** (seeded PRNG),
+so every client and every run receives byte-identical data for the same URL without any
+file or database on the server. The matching `sha256` is therefore stable and acts as the
 cross-language correctness anchor.
-
-> **Decision to confirm:** whether query params live in `targets.txt` (e.g.
-> `0001?size=1048576&delay=50`) or are applied by a workload profile. Recommendation: put
-> them in `targets.txt` so the workload is fully described by that one file.
 
 ---
 
@@ -175,15 +158,15 @@ single summary line. This is JSON Lines, not a JSON array.
 ### 7.1 Per-record line
 
 Exactly these keys, in **this order**, one compact JSON object per line (no spaces after
-`:` or `,` -- i.e. the most compact standard form; see §7.4):
+`:` or `,` — i.e. the most compact standard form; see §7.4):
 
 ```json
-{"target":"0001","status":"ok","size_bytes":1048576,"line_count":4096,"sha256":"<64 hex chars>","fetch_ms":12}
+{"target":"http://localhost:8080/payload/0001?size=1048576","status":"ok","size_bytes":1048576,"line_count":4096,"sha256":"<64 hex chars>","fetch_ms":12}
 ```
 
 | Key | Type | Notes |
 |---|---|---|
-| `target` | string | the ID from `targets.txt` |
+| `target` | string | the full URL from `targets.txt`, verbatim |
 | `status` | string | `"ok"` or `"error"` |
 | `size_bytes` | integer | bytes received; `0` on error |
 | `line_count` | integer | count of `\n` bytes; `0` on error |
@@ -223,11 +206,6 @@ a mismatch is a real bug in that client's I/O, not noise.
 - `sha256` lowercase hex, exactly 64 chars when `ok`.
 - UTF-8, Unix line endings (`\n`), single trailing newline after the summary line.
 
-> **Decision to confirm:** JSON Lines + summary footer, compact form, fixed key order. This
-> is the simplest format that is trivially diffable across languages. Flag if you'd rather
-> emit a single pretty-printed JSON document (easier to read, slightly harder to pin
-> byte-for-byte).
-
 ---
 
 ## 8. Sort order
@@ -235,7 +213,7 @@ a mismatch is a real bug in that client's I/O, not noise.
 Records are sorted **before** output by:
 
 1. `size_bytes` **descending**, then
-2. `target` **ascending** (lexicographic, byte order on the ASCII id).
+2. `target` **ascending** (lexicographic byte order on the full URL string).
 
 This normalizes the nondeterministic completion order of concurrent fetches into a stable,
 identical-across-clients ordering. Error records (`size_bytes` = 0) therefore sort last,
@@ -258,17 +236,13 @@ recorded as an error record), whereas being unable to run at all is a process fa
 (exit `1`). This keeps "the tool worked and reported failures" separate from "the tool
 broke."
 
-> **Decision to confirm:** exit `0` even when some targets error. Alternative: exit nonzero
-> if any target errored (more conventional for CI-style use). Recommendation: exit `0`, since
-> reporting failures *is* the job here and you'll often test deliberately-failing targets.
-
 ---
 
-## 10. The server (test fixture -- not part of the experiment)
+## 10. The server (test fixture — not part of the experiment)
 
 Written in **Go** (boring, reliable, zero-dependency, never the bottleneck). Runs in
 **Docker**. Serves **synthetic payloads generated on the fly** from a seed derived from the
-target ID -- no files, no database. Same server binary serves all four clients, so it is the
+target ID — no files, no database. Same server binary serves all four clients, so it is the
 single source of truth for payload bytes.
 
 Knobs (§6): `size`, `delay`, `status`. Determinism comes from seeding a PRNG with a stable
@@ -284,13 +258,13 @@ with it.
 
 ```
 polyfetch/
-├── README.md            # this file -- overview, contract, findings
+├── README.md            # this file — overview, contract, findings
 ├── CLAUDE.md            # context for Claude Code
 ├── docker-compose.yml   # brings up the server
 ├── .claude/             # project settings + experiment-invariants skill
 ├── server/              # Go payload server + Dockerfile
 ├── shared/
-│   ├── targets.txt      # the workload -- identical for all clients
+│   ├── targets.txt      # the workload — identical for all clients
 │   └── gen_targets.sh   # regenerates targets.txt
 ├── scripts/
 │   ├── run.sh           # cpuset-pin a client, sweep --concurrency
@@ -303,9 +277,9 @@ polyfetch/
     └── typescript/      # standalone package.json project
 ```
 
-> **Decision to confirm:** `SPEC.md` is folded into this README for now. Split it out once
-> the contract (§4-§9) stabilizes and you want it frozen and citable. The split seam is
-> clean: §4-§9 lift out as `SPEC.md`, leaving overview + findings here.
+`SPEC.md` is folded into this README for now. Split it out once the contract (§4–§9)
+stabilizes and you want it frozen and citable. The split seam is clean: §4–§9 lift out as
+`SPEC.md`, leaving overview + findings here.
 
 ---
 
@@ -320,7 +294,7 @@ Bandwidth-free, reproducible, engineered so only the language varies.
    # server container cpuset-pinned to cores 0-3 (see docker-compose.yml)
    ```
 
-2. **Generate the workload** (many medium payloads is the default -- that exercises the
+2. **Generate the workload** (many medium payloads is the default — that exercises the
    worker-pool logic; a "few giant files" mode is a separate contrasting run):
 
    ```bash
@@ -336,13 +310,13 @@ Bandwidth-free, reproducible, engineered so only the language varies.
    # ... repeat per client, per concurrency level
    ```
 
-4. **Verify correctness** -- all four outputs must match (ignoring `fetch_ms`):
+4. **Verify correctness** — all four outputs must match (ignoring `fetch_ms`):
 
    ```bash
    ./scripts/compare.sh            # diffs the four clients' output
    ```
 
-**Measurement hygiene:** discard the first run of each client (warmup / JIT -- matters
+**Measurement hygiene:** discard the first run of each client (warmup / JIT — matters
 especially for Python and TypeScript), then take the **median** of several repeats. Keep
 client and server on disjoint core sets so server-side payload generation never contaminates
 client measurements.
@@ -366,28 +340,35 @@ For each of Go, C++, Python, TypeScript, record:
 
 - How "bounded concurrency of K" was expressed, and how natural it felt.
 - **Did the mechanism change between the I/O stage and the CPU stage?** (Expected: no for
-  Go/C++, yes for Python/TypeScript -- note exactly what changed and why.)
+  Go/C++, yes for Python/TypeScript — note exactly what changed and why.)
 - What the type system caught before runtime.
 - How per-target errors propagated without killing the run.
 - Lines of code for the concurrency logic specifically.
 - What fought you; what felt elegant.
-- Any stdlib gap that forced an exception (libcurl, aiohttp) -- and how it felt.
+- Any stdlib gap that forced an exception (libcurl, aiohttp) — and how it felt.
 
 ### 13.3 Cross-cutting takeaways
 
-> The comparative conclusions -- where the four languages' concurrency philosophies genuinely
+> The comparative conclusions — where the four languages' concurrency philosophies genuinely
 > differ, and where the differences turned out to be smaller than expected. _(write last)_
 
 ---
 
-## 14. Open decisions summary
+## 14. Locked decisions
 
-Ratify or override these before implementation:
+These were the deliberate choices made when locking this contract. Recorded here so the
+*reasoning* behind the contract isn't lost — and so any future revisit knows which sections
+are intentional, not accidental.
 
-1. **§4** `line_count` = raw `\n` byte count (trailing-newline semantics).
-2. **§5** default `--concurrency` = `8`.
-3. **§6** target IDs expanded to `<base-url>/payload/<id>` (vs. full URLs).
-4. **§6** workload params live in `targets.txt` (vs. a separate profile).
-5. **§7** JSON Lines + compact summary footer, fixed key order (vs. pretty JSON doc).
-6. **§9** exit `0` even when some targets error (vs. nonzero on any error).
-7. **§11** `SPEC.md` folded into this README for now (vs. separate file).
+| # | Section | Choice | Rejected alternative |
+|---|---|---|---|
+| 1 | §4 | `line_count` = raw count of `\n` bytes | "Human" line count including final unterminated line |
+| 2 | §5 | Default `--concurrency` = `8` | Other defaults (cosmetic) |
+| 3 | §6 | Target IDs expanded to `<base-url>/payload/<id>` | Full URLs per line |
+| 4 | §6 | Workload params inline in `targets.txt` | Separate workload-profile file |
+| 5 | §7 | JSON Lines records + compact summary footer | Single pretty-printed JSON document |
+| 6 | §9 | Exit `0` even when some targets error | Exit nonzero if any target errored |
+| 7 | §11 | `SPEC.md` folded into this README for now | Separate `SPEC.md` from the start |
+
+If you ever want to revisit a choice, the rationale lives in the conversation that
+produced this contract; the table above is the audit trail.
