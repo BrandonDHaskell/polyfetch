@@ -1,0 +1,22 @@
+# Server binary
+server/server
+
+# Go client binary
+clients/go/polyfetch
+
+# C++ build artifacts
+clients/cpp/build/
+
+# Python artifacts
+clients/python/.venv/
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+
+# TypeScript / Node artifacts
+clients/typescript/node_modules/
+clients/typescript/dist/
+
+# Secrets
+.env
+.env.*

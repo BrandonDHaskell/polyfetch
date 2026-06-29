@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(go build *)",
+      "Bash(go run *)",
+      "Bash(go test *)",
+      "Bash(go vet *)",
+      "Bash(cmake *)",
+      "Bash(make *)",
+      "Bash(ctest *)",
+      "Bash(python *)",
+      "Bash(pytest *)",
+      "Bash(pip install *)",
+      "Bash(npm run *)",
+      "Bash(npm install)",
+      "Bash(npx tsc *)",
+      "Bash(node *)",
+      "Bash(taskset *)",
+      "Bash(docker compose *)"
+    ],
+    "deny": [
+      "Read(./**/.env)",
+      "Read(./**/.env.*)",
+      "Read(./secrets/**)"
+    ]
+  }
+}
