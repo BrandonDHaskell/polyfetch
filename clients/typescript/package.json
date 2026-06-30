@@ -1,0 +1,19 @@
+{
+  "name": "polyfetch-client-typescript",
+  "version": "1.0.0",
+  "description": "polyfetch TypeScript client (worker_threads for CPU-stage parallelism)",
+  "private": true,
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "start": "node dist/polyfetch.js"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "@types/node": "^22.0.0"
+  }
+}
