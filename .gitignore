@@ -20,6 +20,7 @@ clients/typescript/dist/
 
 # Measurement data (generated, not source)
 results/
+targets.txt
 
 # Claude Code local settings (machine-specific, not shared)
 .claude/settings.local.json
