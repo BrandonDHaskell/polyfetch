@@ -20,7 +20,7 @@ REPEATS="${3:-5}"
 case "$LANG" in
   go)         CLIENT_CMD=(clients/go/polyfetch) ;;
   cpp)        CLIENT_CMD=(clients/cpp/build/polyfetch) ;;
-  python)     CLIENT_CMD=(python clients/python/polyfetch.py) ;;
+  python)     CLIENT_CMD=(python3 clients/python/polyfetch.py) ;;
   typescript) CLIENT_CMD=(node clients/typescript/dist/polyfetch.js) ;;
   *) echo "unknown lang: $LANG" >&2; exit 2 ;;
 esac
