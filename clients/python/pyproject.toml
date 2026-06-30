@@ -1,0 +1,8 @@
+[project]
+name = "polyfetch-client-python"
+version = "1.0.0"
+description = "polyfetch Python client (multiprocessing for CPU-stage parallelism)"
+requires-python = ">=3.10"
+# No dependencies: standard library only. The documented exception (aiohttp) is
+# deliberately not used; HTTP is handled with stdlib http.client.
+dependencies = []
