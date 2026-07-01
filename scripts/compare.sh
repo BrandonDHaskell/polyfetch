@@ -25,7 +25,7 @@ run_client() {
   case "$lang" in
     go)         taskset -c 4-15 clients/go/polyfetch --concurrency "$CONC" ;;
     cpp)        taskset -c 4-15 clients/cpp/build/polyfetch --concurrency "$CONC" ;;
-    python)     taskset -c 4-15 python clients/python/polyfetch.py --concurrency "$CONC" ;;
+    python)     taskset -c 4-15 python3 clients/python/polyfetch.py --concurrency "$CONC" ;;
     typescript) taskset -c 4-15 node clients/typescript/dist/polyfetch.js --concurrency "$CONC" ;;
   esac | jq -c 'del(.fetch_ms)' > "$out"
 }
